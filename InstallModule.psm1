@@ -39,6 +39,14 @@ Function Install-Chrome {
     }else{Write-Host "Skipping: Google Chrome as it is already installed."}
 }
 
+Function Install-NotepadPlusPlus {
+    if(!(Find-SoftwareInstalled "Notepad++ (64-bit x64)"))
+    {
+        Write-Host "Installing: Notepad Plus Plus..."
+        choco install notepadplusplus -y
+    }else{Write-Host "Skipping: Notepad Plus Plus as it is already installed."}
+}
+
 Function Install-MsSSMS {
     if(!(Find-SoftwareInstalled 'SQL Server Management Studio'))
     {
@@ -120,7 +128,7 @@ Function IsNetCoreVersionInstalled($version) {
 }
 
 Function Install-NetCoreHostingBundle() {
-    $ver = "3.1.12"
+    $ver = "3.1.15"
     if (!(IsNetCoreVersionInstalled $ver)) {
         Write-Host "Installing: .Net Core Version $ver"
         choco install dotnetcore-windowshosting --version=$ver -y
@@ -129,6 +137,16 @@ Function Install-NetCoreHostingBundle() {
         Write-Error "Please Restart" -ErrorAction Stop
     }
     else { Write-Host "Skiping: .Net Core Version $ver as it is already installed." }
+}
+
+Function Install-NetCoreRuntime() {
+    $ver = "3.1.12"
+    if (!(IsNetCoreVersionInstalled $ver)) {
+        Write-Host "Installing: .Net Core Runtime Version $ver"
+        choco install dotnetcore-runtime --version=$ver -y
+        # Will need to restart so lets give the user a message and exit here.
+    }
+    else { Write-Host "Skiping: .Net Core Runtime Version $ver as it is already installed." }
 }
 
 Function Install-EdFiPackageSource() {
@@ -141,24 +159,30 @@ Function Install-EdFiPackageSource() {
     }
 }
 
-Function Install-EdFiDatabases($dbBinaryPath) {
+Function Install-EdFiDatabases($dbBinaryPath, $mode, $plugins) {
     $configurationJsonFilePath = $dbBinaryPath + "configuration.json"
     # Load the JSON file and update config settings.
     $configJson = (Get-Content $configurationJsonFilePath | Out-String | ConvertFrom-Json)
 
     $connStrings = @{
         EdFi_Ods= "server=(local);trusted_connection=True;database=EdFi_{0};Application Name=EdFi.Ods.WebApi";
-        EdFi_Admin = "server=(local);trusted_connection=True;database=EdFi_Security;persist security info=True;Application Name=EdFi.Ods.WebApi";
-        EdFi_Security= "server=(local);trusted_connection=True;database=EdFi_Admin;Application Name=EdFi.Ods.WebApi";
+        EdFi_Admin = "server=(local);trusted_connection=True;database=EdFi_Admin;persist security info=True;Application Name=EdFi.Ods.WebApi";
+        EdFi_Security= "server=(local);trusted_connection=True;database=EdFi_Security;Application Name=EdFi.Ods.WebApi";
         EdFi_Master= "server=(local);trusted_connection=True;database=master;Application Name=EdFi.Ods.WebApi";
     }
 
-    $configJson.ApiSettings.Mode = "Sandbox";
+    $configJson.ApiSettings.Mode = $mode;
     $configJson.ApiSettings.Engine = "SQLServer";
     $configJson.ApiSettings.MinimalTemplateScript = "EdFiMinimalTemplate";
     $configJson.ApiSettings.PopulatedTemplateScript = "GrandBend";
 
     $configJson.ConnectionStrings = $connStrings;
+
+    if($plugins) {
+        $configJson.Plugin.Folder = "../../Plugin";
+        $configJson.Plugin.Scripts = $plugins;
+    }
+    
 
     # Update File
     $configJson | ConvertTo-Json -depth 100 | Out-File $configurationJsonFilePath
@@ -168,7 +192,7 @@ Function Install-EdFiDatabases($dbBinaryPath) {
     Invoke-Expression -Command $pathDbInstallScript
 }
 
-Function Install-EdFiAPI($dbBinaryPath) {
+Function Install-EdFiAPI($dbBinaryPath, $mode, $plugins) {
 
     $parameters = @{
         PackageVersion = "5.2.14406"
@@ -177,7 +201,7 @@ Function Install-EdFiAPI($dbBinaryPath) {
             Server="localhost"
             UseIntegratedSecurity=$true
         }
-        InstallType = "Sandbox"   
+        InstallType = $mode   
     }
 
     $path = "$dbBinaryPath"+"Install-EdFiOdsWebApi.psm1"
@@ -186,6 +210,18 @@ Function Install-EdFiAPI($dbBinaryPath) {
     Import-Module $path
 
     Install-EdFiOdsWebApi @parameters
+
+    #Lets check if they are installing TPMD or other plugins
+    if($plugins) {
+        $configurationJsonFilePath ="C:\inetpub\Ed-Fi\WebApi\appsettings.json"
+        $configJson = (Get-Content $configurationJsonFilePath | Out-String | ConvertFrom-Json)
+        $configJson.Plugin.Folder = "./Plugin";
+        $configJson.Plugin.Scripts = $plugins;
+
+        # Update File
+        $configJson | ConvertTo-Json -depth 100 | Out-File $configurationJsonFilePath
+    }
+
 }
 
 Function Install-EdFiDocs($dbBinaryPath) {
@@ -220,8 +256,36 @@ Function Install-EdFiSandboxAdmin($dbBinaryPath) {
     Install-EdFiOdsSandboxAdmin @parameters
 }
 
-Function Install-EdFi520Sandbox {
+Function Install-EdFiAdminApp($pathToWorkingDir) {
 
+    if($pathToWorkingDir -eq $null){
+        $pathToWorkingDir = "C:\Ed-Fi\BinWrapper\"
+    }
+
+    Write-Host "    Downloading Ed-Fi Admin App"
+    $url = "https://odsassets.blob.core.windows.net/public/adminapp/AdminAppInstaller.2.2.0.zip"
+    $outputpath = "$pathToWorkingDir\AdminAppInstaller.2.2.0.zip"
+    Invoke-WebRequest -Uri $url -OutFile $outputpath
+
+    # UnZip them to the destination folders.
+    $installPath = "$pathToWorkingDir\AdminAppInstaller"
+    Expand-Archive -LiteralPath $outputpath -DestinationPath $installPath -Force
+
+    #$computerName = [System.Net.Dns]::GetHostName()
+
+    #$parameters = @{
+    #    PackageVersion = "5.2.14406"
+    #    OAuthUrl = "https://$computerName/WebApi"
+    #}
+
+    #$path = "$dbBinaryPath"+"Install-EdFiOdsSandboxAdmin.psm1"
+
+    #Import-Module $path
+
+    #Install-EdFiOdsSandboxAdmin @parameters
+}
+
+Function Install-EdFiCommonAssets($mode, $plugins) {
     # 1) Ensure the working directories exists
     $pathToWorkingDir = "C:\Ed-Fi\BinWrapper\"
 
@@ -270,17 +334,32 @@ Function Install-EdFi520Sandbox {
 
     # Install EdFi Databases
     $dbBinaryPath = "$pathToWorkingDir" + $binaries[3].name + "\"
-    Install-EdFiDatabases $dbBinaryPath
+    Install-EdFiDatabases $dbBinaryPath $mode $plugins
 
     # Install EdFi API
     $apiBinaryPath = "$pathToWorkingDir" + $binaries[0].name + "\"
-    Install-EdFiAPI $apiBinaryPath
+    Install-EdFiAPI $apiBinaryPath $mode $plugins
 
     # Install EdFi Docs / Swagger
     $docsBinaryPath = "$pathToWorkingDir" + $binaries[1].name + "\"
     Install-EdFiDocs $docsBinaryPath
 
-    # Install EdFi Sandbox Admin
-    $sandboxAdminBinaryPath = "$pathToWorkingDir" + $binaries[2].name + "\"
-    Install-EdFiSandboxAdmin $sandboxAdminBinaryPath
+    if($mode -eq "Sandbox") {
+        Install EdFi Sandbox Admin
+       $sandboxAdminBinaryPath = "$pathToWorkingDir" + $binaries[2].name + "\"
+       Install-EdFiSandboxAdmin $sandboxAdminBinaryPath
+    } else { Install-EdFiAdminApp $pathToWorkingDir }
+    
+}
+
+Function Install-EdFi520Sandbox { Install-EdFiCommonAssets "Sandbox" }
+Function Install-EdFi520SharedInstance { Install-EdFiCommonAssets "SharedInstance" }
+
+Function Install-EdFi520SandboxTPDM { 
+    $plugins = @("tpdm")
+    Install-EdFiCommonAssets "Sandbox" $plugins
+}
+Function Install-EdFi520SharedInstanceTPDM { 
+    $plugins = @("tpdm")
+    Install-EdFiCommonAssets "SharedInstance" $plugins 
 }
