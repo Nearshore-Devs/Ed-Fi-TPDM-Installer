@@ -182,7 +182,6 @@ Function Install-EdFiDatabases($dbBinaryPath, $mode, $plugins) {
         $configJson.Plugin.Folder = "../../Plugin";
         $configJson.Plugin.Scripts = $plugins;
     }
-    
 
     # Update File
     $configJson | ConvertTo-Json -depth 100 | Out-File $configurationJsonFilePath
@@ -240,14 +239,17 @@ Function Install-EdFiDocs($dbBinaryPath) {
     Install-EdFiOdsSwaggerUI @parameters
 }
 
+Function Get-EdFiApiUrl() {
+    $computerName = [System.Net.Dns]::GetHostName()
+    return "https://$computerName/WebApi"
+}
+
 Function Install-EdFiSandboxAdmin($dbBinaryPath) {
 
-    $computerName = [System.Net.Dns]::GetHostName()
-
     $parameters = @{
-    PackageVersion = "5.2.14406"
-    OAuthUrl = "https://$computerName/WebApi"
-}
+        PackageVersion = "5.2.14406"
+        OAuthUrl = Get-EdFiApiUrl
+    }
 
     $path = "$dbBinaryPath"+"Install-EdFiOdsSandboxAdmin.psm1"
 
@@ -258,7 +260,7 @@ Function Install-EdFiSandboxAdmin($dbBinaryPath) {
 
 Function Install-EdFiAdminApp($pathToWorkingDir) {
 
-    if($pathToWorkingDir -eq $null){
+    if($pathToWorkingDir -eq $null) {
         $pathToWorkingDir = "C:\Ed-Fi\BinWrapper\"
     }
 
@@ -270,6 +272,20 @@ Function Install-EdFiAdminApp($pathToWorkingDir) {
     # UnZip them to the destination folders.
     $installPath = "$pathToWorkingDir\AdminAppInstaller"
     Expand-Archive -LiteralPath $outputpath -DestinationPath $installPath -Force
+
+    # Update the install.ps1
+    $apiUrl = Get-EdFiApiUrl    
+    $installPSFilePath = $installPath + "\install.ps1"
+    Write-Host "    Updating the APIUrl to $apiUrl"
+    $find = 'OdsApiUrl = ""'
+    $replacementText = 'OdsApiUrl = "' + $apiUrl + '"'
+
+    (Get-Content $installPSFilePath | Out-String) -replace $find, $replacementText | Out-File $installPSFilePath
+
+    Invoke-Expression -Command $installPSFilePath
+    
+    # Update File
+    #$installPS | Out-File $installPSFilePath
 
     #$computerName = [System.Net.Dns]::GetHostName()
 
@@ -345,10 +361,13 @@ Function Install-EdFiCommonAssets($mode, $plugins) {
     Install-EdFiDocs $docsBinaryPath
 
     if($mode -eq "Sandbox") {
-        Install EdFi Sandbox Admin
+       Write-Host "Installing EdFi Sandbox Admin"
        $sandboxAdminBinaryPath = "$pathToWorkingDir" + $binaries[2].name + "\"
        Install-EdFiSandboxAdmin $sandboxAdminBinaryPath
-    } else { Install-EdFiAdminApp $pathToWorkingDir }
+    } else { 
+        Write-Host "Installing EdFi Admin App"
+        Install-EdFiAdminApp $pathToWorkingDir 
+    }
     
 }
 
