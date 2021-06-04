@@ -12,6 +12,18 @@
 ############################################################
 
 # 0) Helper Functions
+Function Start-Message 
+{  
+    Param(
+        [Int32]$Seconds = 10,
+        [string]$Message = "Pausing for 10 seconds..."
+    )
+    ForEach ($Count in (1..$Seconds))
+    {   Write-Progress -Id 1 -Activity $Message -Status "Waiting for $Seconds seconds, $($Seconds - $Count) left" -PercentComplete (($Count / $Seconds) * 100)
+        Start-Sleep -Seconds 1
+    }
+    Write-Progress -Id 1 -Activity $Message -Status "Completed" -PercentComplete 100 -Completed
+}
 
 Function Write-HostInfo($message) { 
     $divider = "----"
@@ -115,6 +127,10 @@ Function Install-MsSQLServerExpress {
     } else {
         Write-Host "Skipping: MsSQL Express there is already a SQL Server installed."
     }
+}
+
+Function Invoke-SQLCmdOnDb($sqlQuery, $connStr) {    
+    Invoke-Sqlcmd -Query $sqlQuery  -ConnectionString $connStr
 }
 
 Function IsNetCoreVersionInstalled($version) {
@@ -283,22 +299,6 @@ Function Install-EdFiAdminApp($pathToWorkingDir) {
     (Get-Content $installPSFilePath | Out-String) -replace $find, $replacementText | Out-File $installPSFilePath
 
     Invoke-Expression -Command $installPSFilePath
-    
-    # Update File
-    #$installPS | Out-File $installPSFilePath
-
-    #$computerName = [System.Net.Dns]::GetHostName()
-
-    #$parameters = @{
-    #    PackageVersion = "5.2.14406"
-    #    OAuthUrl = "https://$computerName/WebApi"
-    #}
-
-    #$path = "$dbBinaryPath"+"Install-EdFiOdsSandboxAdmin.psm1"
-
-    #Import-Module $path
-
-    #Install-EdFiOdsSandboxAdmin @parameters
 }
 
 Function Install-EdFiCommonAssets($mode, $plugins) {
@@ -369,6 +369,116 @@ Function Install-EdFiCommonAssets($mode, $plugins) {
         Install-EdFiAdminApp $pathToWorkingDir 
     }
     
+}
+
+Function Install-TPDMDescriptors($apiURL, $key, $secret, $pathToWorkingDir)
+{
+
+    Start-Message -Seconds 5 -Message "Install-TPDMDescriptors"
+
+	if($pathToWorkingDir -eq $null) {
+        $pathToWorkingDir = "C:\Ed-Fi\BinWrapper\"
+    }
+	
+    # Download the lastest Zip 
+    # TODO: Replace $url with official Ed-Fi URL when its made public in Tech Docs.
+    Write-Host "    Downloading Ed-Fi-TPDMDataLoad.zip"
+    $url = "http://toolwise.net/Ed-Fi-TPDMDataLoad.zip"
+    $outputpath = "$pathToWorkingDir\Ed-Fi-TPDMDataLoad.zip"
+    Invoke-WebRequest -Uri $url -OutFile $outputpath
+
+    # UnZip them to the destination folders.
+    $unzipPath = "$pathToWorkingDir\" # the Zip already contains destiantion folder. No need to do "$pathToWorkingDir\Ed-Fi-TPDMDataLoad"
+    Expand-Archive -LiteralPath $outputpath -DestinationPath $unzipPath -Force
+
+    $installPath = "$pathToWorkingDir\Ed-Fi-TPDMDataLoad"
+
+    # Update the install.ps1
+    #$apiUrl = Get-EdFiApiUrl    
+    $installPSFilePath = $installPath + "\LoadBootstrapData.ps1"
+    Write-Host "    Updating:"
+    Write-Host "       - APIUrl to $apiUrl"
+    Write-Host "       - Key to $key"
+    Write-Host "       - Secret to $secret"
+	
+    $findApiUrl = '"-b", "http://localhost:54746/",'
+    $replacementTextApiUrl = '"-b", "' + $apiUrl + '",'
+    $findKey = '"-k", "minimalSandbox",'
+    $replacementTextKey = '"-k", "'+$key+'",'
+    $findSecret = '"-s", "minimumSandboxSecret",'
+    $replacementTextSecret = '"-s", "'+$secret+'",'
+
+    (Get-Content $installPSFilePath | Out-String) -replace $findApiUrl, $replacementTextApiUrl -replace $findKey, $replacementTextKey -replace $findSecret, $replacementTextSecret | Out-File $installPSFilePath
+	Write-Host "    Done updating LoadBootstrapData.ps1 configuration parameters"
+	
+	#TODO: 
+	# We need to ensure that vendor has the correct Namespaces: ('uri://ed-fi.org/','uri://tpdm.ed-fi.org', 'http://ed-fi.org') 
+	# Then we need to ensure we have the "" claimset so that we can add the Descriptors;
+	#    1) Get the current claimset for the application where the Key=$key, we have to restore it later.
+	#    2) Set the application's claimset to "Bootstrap Descriptors and EdOrgs"
+    # Add TPDM Namespace to the EdFi_Admin Db
+	
+	$EdFiAdminConn = "server=(local);trusted_connection=True;database=EdFi_Admin;persist security info=True;Application Name=EdFi.Ods.WebApi";						 
+						 
+	$sQLServer = "localhost"
+	$dbEdFi_Admin = "EdFi_Admin"
+    $dbEdFi_Ods = "EdFi_Ods"
+    				 
+	$sqlCurrentClaimsetAndVendor="SELECT Applications.ApplicationId, Applications.ClaimSetName, Vendor_VendorId
+						 FROM dbo.Applications
+						 INNER JOIN dbo.ApiClients on Applications.ApplicationId = ApiClients.Application_ApplicationId
+						 WHERE ApiClients.[Key] = '"+$key+"';"
+	
+	$sqlResult =  Invoke-Sqlcmd  -ServerInstance $sQLServer -Database $dbEdFi_Admin -Query $sqlCurrentClaimsetAndVendor
+    $applicationId = $sqlResult.Item(0)
+	$claimSet = $sqlResult.Item(1)
+    $vendorId = $sqlResult.Item(2)
+    #Checking the Current Tpdm Descriptors
+    $sqlCurrentTpdmDescriptors="SELECT COUNT(*) as TPDMDescriptorCount from edfi.Descriptor where Namespace like '%tpdm%';"
+    $sqlDescriptorsResult =  Invoke-Sqlcmd  -ServerInstance $sQLServer -Database $dbEdFi_Ods -Query $sqlCurrentTpdmDescriptors
+    $descriptorsCount = $sqlDescriptorsResult.Item(0)
+
+	# cheking if the required namespaces exists
+	$ensureNamespacePrefix = "
+		IF NOT EXISTS ( SELECT * FROM VendorNamespacePrefixes WHERE Vendor_VendorId =  $vendorId AND NamespacePrefix = 'http://ed-fi.org')
+		   BEGIN
+			  INSERT INTO [dbo].[VendorNamespacePrefixes] ([NamespacePrefix],[Vendor_VendorId]) VALUES ('http://ed-fi.org' ,$vendorId)
+		   END
+
+		IF NOT EXISTS ( SELECT * FROM VendorNamespacePrefixes WHERE Vendor_VendorId = $vendorId AND NamespacePrefix = 'uri://tpdm.ed-fi.org')
+			BEGIN
+			  INSERT INTO [dbo].[VendorNamespacePrefixes] ([NamespacePrefix], [Vendor_VendorId]) VALUES ('uri://tpdm.ed-fi.org', $vendorId)
+			END
+
+		IF NOT EXISTS ( SELECT * FROM VendorNamespacePrefixes WHERE Vendor_VendorId = $vendorId AND NamespacePrefix = 'uri://ed-fi.org')
+			BEGIN
+			  INSERT INTO [dbo].[VendorNamespacePrefixes] ([NamespacePrefix], [Vendor_VendorId]) VALUES ('uri://ed-fi.org', $vendorId)
+			END"
+	
+	Invoke-Sqlcmd -ServerInstance $sQLServer -Database $dbEdFi_Admin -Query  $ensureNamespacePrefix
+
+	
+    $sqlUpdApplicationClaimset="UPDATE [dbo].[Applications] SET [ClaimSetName] = 'Bootstrap Descriptors and EdOrgs' WHERE [ApplicationId] = $applicationId"
+	
+	Invoke-Sqlcmd  -ServerInstance $sQLServer -Database $dbEdFi_Admin -Query $sqlUpdApplicationClaimset
+
+    # Run the LoadBootstrapData command on PowerShell
+	Write-Host "    Executing the LoadBootstrapData.ps1 process..."
+
+    Invoke-Expression -Command $installPSFilePath
+	
+	#TODO: Once everything ran we need to put the claimset back to what it was.
+    $sqlRevertClaimset="UPDATE [dbo].[Applications] SET [ClaimSetName] = '" + $claimSet +"' WHERE [ApplicationId] = $applicationId"
+								
+	Invoke-Sqlcmd  -ServerInstance $sQLServer -Database $dbEdFi_Admin -Query $sqlRevertClaimset
+	
+	# Verify everything good...
+    $sqlNewTpdmDescriptors="SELECT COUNT(*) as TPDMDescriptorCount from edfi.Descriptor where Namespace like '%tpdm%';"
+    $sqlNewDescriptorsResult =  Invoke-Sqlcmd  -ServerInstance $sQLServer -Database $dbEdFi_Ods -Query $sqlNewTpdmDescriptors
+    $newDescriptorsCount = $sqlNewDescriptorsResult.Item(0)
+    $descriptorsAdded= $newDescriptorsCount-$descriptorsCount
+
+    Write-Host "$descriptorsAdded TPDM Descriptors were added."
 }
 
 Function Install-EdFi520Sandbox { Install-EdFiCommonAssets "Sandbox" }
