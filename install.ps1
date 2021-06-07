@@ -12,20 +12,19 @@
 ############################################################
 #Requires -Version 5
 #Requires -RunAsAdministrator
+# 1) Ensure the working directory exists
+$global:pathToWorkingDir = "C:\Ed-Fi\BinWrapper\"
+Write-Host "Step: Ensuring working path is accessible. ($global:pathToWorkingDir)"
+New-Item -ItemType Directory -Force -Path $pathToWorkingDir
 
-Import-Module .\InstallModule -Force
 
-Write-HostInfo "Wrapper for the Ed-Fi binary installers."
-Write-Host "To install Ed-Fi run any of the following commands:" 
-Write-HostStep " Ed-Fi ODS/APi & Tools 5.2.0"
-Write-Host " Install-EdFi520Sandbox"
-Write-Host " Install-EdFi520SharedInstance"
-Write-Host " Install-EdFi520SandboxTPDM"
-Write-Host " Install-EdFi520SharedInstanceTPDM"
-Write-HostStep " Other Tools:"
-Write-Host "    Install-TPDMDescriptors 'apiURL' 'key' 'secret'"
-Write-Host "    Install-Chocolatey" 
-Write-Host "    Install-Chrome" 
-Write-Host "    Install-MsSSMS"
-Write-Host "    Install-NotepadPlusPlus"
-Write-Host ""
+# 2) Download and unzip the github powershell scripts (in zip format)
+$packageUrl = "https://github.com/Nearshore-Devs/Ed-Fi-TPDM-Installer/archive/main.zip"
+$outputpath = "$global:pathToWorkingDir\main.zip"
+Invoke-WebRequest -Uri $packageUrl -OutFile $outputpath
+Expand-Archive -LiteralPath $outputpath -DestinationPath $global:pathToWorkingDir -Force
+
+# 3) Execute script
+$global:pathToAssets = "$global:pathToWorkingDir\Ed-Fi-TPDM-Installer-main\"
+$pathToMainScript = "$global:pathToAssets\binaryInstall.ps1"
+Invoke-Expression -Command $pathToMainScript

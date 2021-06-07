@@ -23,7 +23,7 @@ From the **Windows Menu**, search for **PowerShell**, right click on it, and sel
 <br/><img src="img/powershell1.png" width="600" >
 
 **2)** Run the automated installer by pasting this command in to the PowerShell window:
-> Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://github.com/Ed-Fi-Exchange-OSS/TBD/raw/main/install.ps1'))
+> Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://github.com/Nearshore-Devs/Ed-Fi-TPDM-Installer/raw/main/install.ps1'))
 
 **3)** Once everything has finished installing you should see a browser stood up.
 
