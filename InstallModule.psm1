@@ -423,6 +423,16 @@ Function Install-TPDMDescriptors($apiURL, $key, $secret, $pathToWorkingDir)
 	$sQLServer = "localhost"
 	$dbEdFi_Admin = "EdFi_Admin"
     $dbEdFi_Ods = "EdFi_Ods"
+    $descriptorsCount=0
+    $dbExist=0
+ 
+    $dataBaseList =SqlServer\Get-SqlDatabase  -ServerInstance localhost 
+    foreach ($itemDb in $databaseList) #for each separate server / database pair in $databases
+    {
+        if( $dbEdFi_Ods -eq $itemDb.Name) {$dbExist=1}
+ 
+    }	
+    if($dbExist  -eq 0) {$dbEdFi_Ods="EdFi_Ods_Sandbox_$key"}
     				 
 	$sqlCurrentClaimsetAndVendor="SELECT Applications.ApplicationId, Applications.ClaimSetName, Vendor_VendorId
 						 FROM dbo.Applications
@@ -434,9 +444,19 @@ Function Install-TPDMDescriptors($apiURL, $key, $secret, $pathToWorkingDir)
 	$claimSet = $sqlResult.Item(1)
     $vendorId = $sqlResult.Item(2)
     #Checking the Current Tpdm Descriptors
-    $sqlCurrentTpdmDescriptors="SELECT COUNT(*) as TPDMDescriptorCount from edfi.Descriptor where Namespace like '%tpdm%';"
-    $sqlDescriptorsResult =  Invoke-Sqlcmd  -ServerInstance $sQLServer -Database $dbEdFi_Ods -Query $sqlCurrentTpdmDescriptors
-    $descriptorsCount = $sqlDescriptorsResult.Item(0)
+     $sqlCurrentTpdmDescriptors="SELECT COUNT(*) as TPDMDescriptorCount from edfi.Descriptor where Namespace like '%tpdm%';"
+
+    try{
+        $sqlDescriptorsResult =  Invoke-Sqlcmd  -ServerInstance $sQLServer -Database $dbEdFi_Ods -Query $sqlCurrentTpdmDescriptors       
+        $descriptorsCount = $sqlDescriptorsResult.Item(0)
+    }catch{
+        $dbEdFi_Ods= $dbEdFi_Ods_Sandbox
+        $sqlDescriptorsResult =  Invoke-Sqlcmd  -ServerInstance $sQLServer -Database $dbEdFi_Ods -Query $sqlCurrentTpdmDescriptors       
+        $descriptorsCount = $sqlDescriptorsResult.Item(0)
+    }
+
+   
+  
 
 	# cheking if the required namespaces exists
 	$ensureNamespacePrefix = "
