@@ -134,18 +134,28 @@ Function Invoke-SQLCmdOnDb($sqlQuery, $connStr) {
 }
 
 Function IsNetCoreVersionInstalled($version) {
-    $DotNetCoreItems = Get-Item -ErrorAction SilentlyContinue -Path 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Updates\.NET Core'
-    $DotNetCoreItems.GetSubKeyNames() | Where-Object { $_ -Match "Microsoft .NET Core $version.*Windows Server Hosting" } | ForEach-Object {
-        Write-Host "The host has installed $_"
-        return $True
-    }
-    
-    return $False
+	$DotNetCoreMinimumRuntimeVersion = [System.Version]::Parse($version)
+	$DotNETCoreUpdatesPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Microsoft\Updates\.NET Core"
+	$DotNetCoreItems = Get-Item -ErrorAction Stop -Path $DotNETCoreUpdatesPath
+	$MinimumDotNetCoreRuntimeInstalled = $False
+	$DotNetCoreItems.GetSubKeyNames() | Where { $_ -Match "Microsoft .NET Core.*Windows Server Hosting" } | ForEach-Object {
+		$registryKeyPath = Get-Item -Path "$DotNETCoreUpdatesPath\$_"
+		$dotNetCoreRuntimeVersion = $registryKeyPath.GetValue("PackageVersion")
+		$dotNetCoreRuntimeVersionCompare = [System.Version]::Parse($dotNetCoreRuntimeVersion)
+		if($dotNetCoreRuntimeVersionCompare -ge $DotNetCoreMinimumRuntimeVersion) {
+			Write-Host "The host has installed the following .NET Core Runtime: $_ (MinimumVersion requirement: $DotNetCoreMinimumRuntimeVersion)"
+			$MinimumDotNetCoreRuntimeInstalled = $True
+		}
+	}
+	if ($MinimumDotNetCoreRuntimeInstalled -eq $False) {
+		Write-host ".NET Core Runtime (MiniumVersion $DotNetCoreMinimumRuntimeVersion) is required." -foreground Red
+	}    
+    return $MinimumDotNetCoreRuntimeInstalled
 }
 
 Function Install-NetCoreHostingBundle() {
     $ver = "3.1.15"
-    if (IsNetCoreVersionInstalled -lt $ver ) {
+    if (!(IsNetCoreVersionInstalled $ver)) {
         Write-Host "Installing: .Net Core Version $ver"
         choco install dotnetcore-windowshosting --version=$ver -y
         #Will need to restart so lets give the user a message and exit here.
