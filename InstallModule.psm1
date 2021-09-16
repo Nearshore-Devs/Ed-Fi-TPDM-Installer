@@ -147,10 +147,10 @@ Function Install-NetCoreHostingBundle() {
     $ver = "3.1.15"
     if (!(IsNetCoreVersionInstalled $ver)) {
         Write-Host "Installing: .Net Core Version $ver"
-        choco install dotnetcore-windowshosting --version=$ver -y
+        #choco install dotnetcore-windowshosting --version=$ver -y
         # Will need to restart so lets give the user a message and exit here.
-        Write-Host ".Net Core Hosting Bundle May Require a Restart. Please restart this computer and re run the install."
-        Write-Error "Please Restart" -ErrorAction Stop
+        #Write-Host ".Net Core Hosting Bundle May Require a Restart. Please restart this computer and re run the install."
+        #Write-Error "Please Restart" -ErrorAction Stop
     }
     else { Write-Host "Skiping: .Net Core Version $ver as it is already installed." }
 }
