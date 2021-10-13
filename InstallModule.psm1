@@ -160,7 +160,7 @@ Function Install-NetCoreHostingBundle() {
         choco install dotnetcore-windowshosting --version=$ver -y
         #Will need to restart so lets give the user a message and exit here.
         Write-Host ".Net Core Hosting Bundle May Require a Restart. Please restart this computer and re run the install."
-        Write-Error "Please Restart" -ErrorAction Stop
+        #Write-Error "Please Restart" -ErrorAction Stop
     }
     else { Write-Host "Skiping: .Net Core Version $ver as it is already installed." }
 }
