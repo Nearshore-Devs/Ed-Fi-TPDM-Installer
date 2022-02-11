@@ -155,7 +155,7 @@ Function IsNetCoreVersionInstalled($version) {
 
 Function Install-NetCoreHostingBundle() {
     $ver = "3.1.15"
-    if (!(IsNetCoreVersionInstalled $ver)) {
+    if ((IsNetCoreVersionInstalled $ver) -eq $false) {
         Write-Host "Installing: .Net Core Version $ver"
         choco install dotnetcore-windowshosting --version=$ver -y
         #Will need to restart so lets give the user a message and exit here.
@@ -167,7 +167,7 @@ Function Install-NetCoreHostingBundle() {
 
 Function Install-NetCoreRuntime() {
     $ver = "3.1.12"
-    if (!(IsNetCoreVersionInstalled $ver)) {
+    if ((IsNetCoreVersionInstalled $ver) -eq $false) {
         Write-Host "Installing: .Net Core Runtime Version $ver"
         choco install dotnetcore-runtime --version=$ver -y
         # Will need to restart so lets give the user a message and exit here.
